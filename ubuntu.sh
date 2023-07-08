@@ -18,23 +18,27 @@
 # DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-version="3.0.0";
+#バージョン　本家は3.0.0
+version="0.0.1";
 
+#ご挨拶
 tput setaf 4;
 echo "";
-echo "Misskey auto setup for Ubuntu";
+echo "Misskey auto setup for CentOS";
 echo " v$version";
 echo "";
 
-#region initial check
+#OS確認
 tput setaf 2;
 echo "Check: Linux;"
+#Linuxかどうかのチェック
 if [ "$(command -v uname)" ]; then
 	if [ "$(uname -s)" == "Linux" ]; then
 		tput setaf 7;
 		echo "	OK.";
-		if ! [ -f "/etc/lsb-release" ]; then
-			echo "	Warning: This script has been tested on Ubuntu and may not work on other distributions.";
+		#RedHat・CentOSのバージョンファイルチェック(RedHat・CentOSの確認)
+		if ! [ -f "/etc/redhat-release" ]; then
+			echo "	Warning: This script has been tested on RedHat or CentOS and may not work on other distributions.";
 		fi
 	else
 		tput setaf 1;
@@ -46,9 +50,11 @@ else
 	echo "	NG.";
 	exit 1;
 fi
-
+#OS確認終了
+#rootの確認
 tput setaf 2;
 echo "Check: root user;";
+#whoamiでrootと出ればsudoもしくはsoで実行されている。
 if [ "$(whoami)" != 'root' ]; then
 	tput setaf 1;
 	echo "	NG. This script must be run as root.";
@@ -57,7 +63,8 @@ else
 	tput setaf 7;
 	echo "	OK. I am root user.";
 fi
-
+#rootの確認終了
+#アーキテクチャの確認
 tput setaf 2;
 echo "Check: arch;";
 case $(uname -m) in
@@ -77,14 +84,14 @@ case $(uname -m) in
 		exit 1;
 		;;
 esac
-#endregion
+#アーキテクチャの確認終了
 
-#region user input
-#region method
+#導入条件のアンケート
 tput setaf 3;
 echo "";
 echo "Install Method";
 tput setaf 7;
+#systemdかdockerか
 echo "Do you use systemd to run Misskey?:";
 echo "Y = To use systemd / n = To use docker"
 read -r -p "[Y/n] > " yn
@@ -104,11 +111,12 @@ case "$yn" in
 	*)
 		echo "Use Systemd.";
 		method=systemd;
+		#メモ systemdはここでlocalhostをぶっこんでる
 		misskey_localhost=localhost
 		;;
 esac
-#endregion
-
+#systemdかdockerか終了
+#docker向け追加質問
 if [ $method == "docker" ]; then
 	if [ $arch == "amd64" ]; then
 		echo "Do you use image from Docker Hub?:";
@@ -134,12 +142,14 @@ if [ $method == "docker" ]; then
 	fi
 
 fi
-
+#docker向け追加質問終了
+#Misskeyのセッティングアンケート
 tput setaf 3;
 echo "Misskey setting";
 tput setaf 7;
 misskey_directory=misskey
 
+#どのMisskeyを使う？(リポジトリ選択)
 if [ $method != "docker_hub" ]; then
 	echo "Repository url where you want to install:"
 	read -r -p "> " -e -i "https://github.com/misskey-dev/misskey.git" repository;
@@ -148,13 +158,16 @@ if [ $method != "docker_hub" ]; then
 	echo "Branch or Tag"
 	read -r -p "> " -e -i "master" branch;
 fi
-
+#どのMisskeyを使う？終了
+#Misskeyの実行ユーザは？
 tput setaf 3;
 echo "";
 echo "Enter the name of user with which you want to execute Misskey:";
 tput setaf 7;
 read -r -p "> " -e -i "misskey" misskey_user;
+#Misskeyの実行ユーザは？終了
 
+#Misskeyを動かすドメインは？
 tput setaf 3;
 echo "";
 echo "Enter host where you want to install Misskey:";
@@ -163,32 +176,39 @@ read -r -p "> " -e -i "example.com" host;
 tput setaf 7;
 hostarr=(${host//./ });
 echo "OK, let's install $host!";
+#Misskeyを動かすドメインは？終了
 
-#region nginx
+#nginxのアンケート
 tput setaf 3;
 echo "";
 echo "Nginx setting";
 tput setaf 7;
+#nginxを使う？
 echo "Do you want to setup nginx?:";
 read -r -p "[Y/n] > " yn
 case "$yn" in
 	[Nn]|[Nn][Oo])
+		#nginxは使わない
 		echo "Nginx and Let's encrypt certificate will not be installed.";
 		echo "You should open ports manually.";
 		nginx_local=false;
 		cloudflare=false;
 		certbot=false;
 
+		#Misskeyはどのポートで動かす？
 		echo "Misskey port: ";
 		read -r -p "> " -e -i "3000" misskey_port;
 		;;
 	*)
+		#nginxを使う
 		echo "Nginx will be installed on this computer.";
 		echo "Port 80 and 443 will be opened by modifying iptables.";
 		nginx_local=true;
 
 		tput setaf 3;
 		echo "";
+		
+		#ポート変更はツールで変更する？
 		tput setaf 7;
 		echo "Do you want it to open ports, to setup ufw or iptables?:";
 		echo "u = To setup ufw / i = To setup iptables / N = Not to open ports";
@@ -215,12 +235,14 @@ case "$yn" in
 				iptables=false
 				;;
 			esac
+		#ポート変更はツールで変更する？終了
 
-		#region certbot
+		#cartbotの設定
 		tput setaf 3;
 		echo "";
 		echo "Certbot setting";
 		tput setaf 7;
+		#cartbotを使ってHTTPS化する？
 		echo "Do you want it to setup certbot to connect with https?:";
 
 		read -r -p "[Y/n] > " yn2
@@ -235,8 +257,9 @@ case "$yn" in
 				#endregion
 				;;
 			esac
+		#cartbotの設定終了
 
-		#region cloudflare
+		#cloudflareの設定（後で検証する）
 		tput setaf 3;
 		echo "";
 		echo "Cloudflare setting";
@@ -277,27 +300,28 @@ case "$yn" in
 				_EOF
 
 				chmod 600 /etc/cloudflare/cloudflare.ini;
-				#endregion
 				;;
 			esac
-
+		#cloudflareの設定終了
+		#nginxを使う人向けのMisskeyはどのポートで動かす？
 		echo "Tell me which port Misskey will watch: ";
 		echo "Misskey port: ";
 		read -r -p "> " -e -i "3000" misskey_port;
 		;;
 esac
-#endregion
 
-#region postgres
+#postgresのアンケート
 tput setaf 3;
 echo "";
 echo "Database (PostgreSQL) setting";
 tput setaf 7;
+#postgresをここでインストールするかい？
 echo "Do you want to install postgres locally?:";
 echo "(If you have run this script before in this computer, choose n and enter values you have set.)"
 read -r -p "[Y/n] > " yn
 case "$yn" in
 	[Nn]|[Nn][Oo])
+		#しないならもともとの接続情報を教えてよ
 		echo "You should prepare postgres manually until database is created.";
 		db_local=false;
 
@@ -307,6 +331,7 @@ case "$yn" in
 		read -r -p "> " -e -i "5432" db_port;
 		;;
 	*)
+		#するならこっちで接続情報決めとくかんね
 		echo "PostgreSQL will be installed on this computer at $misskey_localhost:5432.";
 		db_local=true;
 
@@ -314,25 +339,27 @@ case "$yn" in
 		db_port=5432;
 		;;
 esac
-
+#postgresのID(または登録するID)を教えて？
 echo "Database user name: ";
 read -r -p "> " -e -i "misskey" db_user;
 echo "Database user password: ";
 read -r -p "> " db_pass;
 echo "Database name:";
 read -r -p "> " -e -i "mk1" db_name;
-#endregion
+#postgresのアンケート終了
 
-#region redis
+#redisのアンケート
 tput setaf 3;
 echo "";
 echo "Redis setting";
 tput setaf 7;
+#redisのインストールするかい？
 echo "Do you want to install redis locally?:";
 echo "(If you have run this script before in this computer, choose n and enter values you have set.)"
 read -r -p "[Y/n] > " yn
 case "$yn" in
 	[Nn]|[Nn][Oo])
+		#しないならもともとの接続情報を教えてよ
 		echo "You should prepare Redis manually.";
 		redis_local=false;
 
@@ -342,6 +369,7 @@ case "$yn" in
 		read -r -p "> " -e -i "6379" redis_port;
 		;;
 	*)
+		#するならこっちで接続情報決めとくかんね
 		echo "Redis will be installed on this computer at $misskey_localhost:6379.";
 		redis_local=true;
 
@@ -350,20 +378,22 @@ case "$yn" in
 		;;
 esac
 
+#redisのパスワードを教えてよ
 echo "Redis password:";
 read -r -p "> " redis_pass;
-#endregion
 
 tput setaf 7;
 echo "";
 echo "OK. It will automatically install what you need. This will take some time.";
 echo "";
-#endregion
+#redisのアンケート終了
 
 set -eu;
 
+#メモリーの空き確認
 tput setaf 2;
 echo "Check: Memory;"
+#メモリーの情報取得
 mem_all=$(free -t --si -g | tail -n 1);
 mem_allarr=(${mem_all//\\t/ });
 if [ "${mem_allarr[1]}" -ge 3 ]; then
@@ -375,6 +405,7 @@ else
 	tput setaf 7;
 	mem_swap=$(free | tail -n 1);
 	mem_swaparr=(${mem_swap//\\t/ });
+	#スワップ領域がなかったら作ろうとしているらしい(ここに質問を入れるかは脳内で議論中)
 	if [ "${mem_swaparr[1]}" -eq 0 ]; then
 		if [ "${mem_allarr[1]}" -ge 2 ]; then
 			echo "	Swap will be made (1M x 1024).";
@@ -388,6 +419,7 @@ else
 		echo "/swap none swap sw 0" >> /etc/fstab;
 		free -t;
 	else
+		#スワップ領域が足りなかったら終わりです。お疲れ様でした。	
 		echo "  Add more swaps!";
 		exit 1;
 	fi
