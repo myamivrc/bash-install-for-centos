@@ -424,19 +424,26 @@ else
 		exit 1;
 	fi
 fi
+#メモリーの空き確認終了
 
+#ユーザの作成
 tput setaf 3;
 echo "Process: add misskey user ($misskey_user);";
 tput setaf 7;
+#ユーザの存在確認
 if cut -d: -f1 /etc/passwd | grep -q -x "$misskey_user"; then
+	#ユーザのあるじゃん
 	echo "$misskey_user exists already. No user will be created.";
 else
+	#ユーザのないじゃん作るね
 	useradd -m -U -s /bin/bash "$misskey_user";
 fi
 echo "misskey_user=\"$misskey_user\"" > /root/.misskey.env
 echo "version=\"$version\"" >> /root/.misskey.env
 m_uid=$(id -u "$misskey_user")
+#ユーザの作成終了
 
+#インストール開始、ここがみゃみーさんの腕の見せどころ
 tput setaf 3;
 echo "Process: apt install #1;";
 tput setaf 7;
