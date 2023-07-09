@@ -443,28 +443,41 @@ echo "version=\"$version\"" >> /root/.misskey.env
 m_uid=$(id -u "$misskey_user")
 #ユーザの作成終了
 
+
 #インストール開始、ここがみゃみーさんの腕の見せどころ
 tput setaf 3;
 echo "Process: apt install #1;";
 tput setaf 7;
-apt -qq update -y;
-apt -qq install -y curl nano jq gnupg2 apt-transport-https ca-certificates lsb-release software-properties-common uidmap$($nginx_local && echo " certbot")$($nginx_local && ($ufw && echo " ufw" || $iptables && echo " iptables-persistent"))$($cloudflare && echo " python3-certbot-dns-cloudflare")$([ $method != "docker_hub" ] && echo " git")$([ $method == "systemd" ] && echo " ffmpeg build-essential");
+#まずは全体的にアップデート
+dnf update -y;
 
+#epelのインストール(certbotのインストールに必要)
+sudo dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm";
+
+#rpmFusionのインストール(FFmpegのインストールに必要)
+sudo dnf install -y "https://download1.rpmfusion.org/free/el/rpmfusion-free-release-8.noarch.rpm"
+
+#必要ソフトのインストール
+#メモ：（抜いたもの：apt-transport-https、software-properties-common、build-essential、uidmap。理由:RedHat環境には不要なため）
+sudo dnf install -y curl nano jq gnupg2 ca-certificates redhat-lsb-core$($nginx_local && echo " certbot")$($nginx_local && ($ufw && echo " ufw" || $iptables && echo " iptables-services"))$($cloudflare && echo " python3-certbot-dns-cloudflare")$([ $method != "docker_hub" ] && echo " git")$([ $method == "systemd" ] && echo " ffmpeg");
+
+#Docker向け設定
 if [ $method != "docker_hub" ]; then
-#region work with misskey user
-su "$misskey_user" << MKEOF
-set -eu;
-cd ~;
-tput setaf 3;
-echo "Process: git clone;";
-tput setaf 7;
-if [ -e "./$misskey_directory" ]; then
-	if [ -f "./$misskey_directory" ]; then
-		rm "./$misskey_directory";
-	else
-		rm -rf "./$misskey_directory";
+	#ミスキーユーザーに切り替え
+	su "$misskey_user" << MKEOF
+	set -eu;
+	cd ~;
+	tput setaf 3;
+	echo "Process: git clone;";
+	tput setaf 7;
+	if [ -e "./$misskey_directory" ]; then
+		if [ -f "./$misskey_directory" ]; then
+			rm "./$misskey_directory";
+		else
+			rm -rf "./$misskey_directory";
 	fi
 fi
+#ミスキーをClone
 git clone -b "$branch" --depth 1 --recursive "$repository" "$misskey_directory";
 MKEOF
 #endregion
