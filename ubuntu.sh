@@ -54,7 +54,7 @@ fi
 #rootの確認
 tput setaf 2;
 echo "Check: root user;";
-#whoamiでrootと出ればsudoもしくはsoで実行されている。
+#whoamiでrootと出ればsudoもしくはsuで実行されている。
 if [ "$(whoami)" != 'root' ]; then
 	tput setaf 1;
 	echo "	NG. This script must be run as root.";
@@ -149,7 +149,7 @@ echo "Misskey setting";
 tput setaf 7;
 misskey_directory=misskey
 
-#どのMisskeyを使う？(リポジトリ選択)
+#どのMisskeyを使う？(リポジトリ選択)※Systemd向け
 if [ $method != "docker_hub" ]; then
 	echo "Repository url where you want to install:"
 	read -r -p "> " -e -i "https://github.com/misskey-dev/misskey.git" repository;
@@ -432,10 +432,10 @@ echo "Process: add misskey user ($misskey_user);";
 tput setaf 7;
 #ユーザの存在確認
 if cut -d: -f1 /etc/passwd | grep -q -x "$misskey_user"; then
-	#ユーザのあるじゃん
+	#ユーザあるじゃん
 	echo "$misskey_user exists already. No user will be created.";
 else
-	#ユーザのないじゃん作るね
+	#ユーザないじゃん作るね
 	useradd -m -U -s /bin/bash "$misskey_user";
 fi
 echo "misskey_user=\"$misskey_user\"" > /root/.misskey.env
@@ -459,9 +459,9 @@ sudo dnf install -y "https://download1.rpmfusion.org/free/el/rpmfusion-free-rele
 
 #必要ソフトのインストール
 #メモ：（抜いたもの：apt-transport-https、software-properties-common、build-essential、uidmap。理由:RedHat環境には不要なため）
-sudo dnf install -y curl nano jq gnupg2 ca-certificates redhat-lsb-core$($nginx_local && echo " certbot")$($nginx_local && ($ufw && echo " ufw" || $iptables && echo " iptables-services"))$($cloudflare && echo " python3-certbot-dns-cloudflare")$([ $method != "docker_hub" ] && echo " git")$([ $method == "systemd" ] && echo " ffmpeg");
+sudo dnf install -y curl nano jq gnupg2 ca-certificates redhat-lsb-core$($nginx_local && echo " yum-utils")$($nginx_local && echo " certbot")$($nginx_local && ($ufw && echo " ufw" || $iptables && echo " iptables-services"))$($cloudflare && echo " python3-certbot-dns-cloudflare")$([ $method != "docker_hub" ] && echo " git")$([ $method == "systemd" ] && echo " ffmpeg");
 
-#Docker向け設定
+#Systemd向け設定
 if [ $method != "docker_hub" ]; then
 	#ミスキーユーザーに切り替え
 	su "$misskey_user" << MKEOF
@@ -475,35 +475,34 @@ if [ $method != "docker_hub" ]; then
 			rm "./$misskey_directory";
 		else
 			rm -rf "./$misskey_directory";
+		fi
 	fi
-fi
-#ミスキーをClone
-git clone -b "$branch" --depth 1 --recursive "$repository" "$misskey_directory";
-MKEOF
-#endregion
+	#ミスキーをClone
+	git clone -b "$branch" --depth 1 --recursive "$repository" "$misskey_directory";
+	MKEOF
+#ここからDockerむけせっていー
 else
-#region work with misskey user
-su "$misskey_user" << MKEOF
-set -eu;
-cd ~;
-if [ -e "./$misskey_directory" ]; then
-	if [ -f "./$misskey_directory" ]; then
-		rm "./$misskey_directory";
+	#ミスキーユーザーに切り替え
+	su "$misskey_user" << MKEOF
+	set -eu;
+	cd ~;
+	if [ -e "./$misskey_directory" ]; then
+		if [ -f "./$misskey_directory" ]; then
+			rm "./$misskey_directory";
+		fi
+	else
+		mkdir "./$misskey_directory"
 	fi
-else
-	mkdir "./$misskey_directory"
-fi
-if [ -e "./$misskey_directory/.config" ]; then
-	if [ -f "./$misskey_directory/.config" ]; then
-		rm "./$misskey_directory/.config";
+	if [ -e "./$misskey_directory/.config" ]; then
+		if [ -f "./$misskey_directory/.config" ]; then
+			rm "./$misskey_directory/.config";
+		fi
+	else
+		mkdir "./$misskey_directory/.config"
 	fi
-else
-	mkdir "./$misskey_directory/.config"
+	MKEOF
 fi
-MKEOF
-#endregion
-fi
-
+#ミスキーのymlを準備
 tput setaf 3;
 echo "Process: write default.yml;";
 tput setaf 7;
@@ -516,6 +515,7 @@ tput setaf 3;
 echo "Process: create default.yml;"
 tput setaf 7;
 
+#ミスキーのymlを編集ここから
 cat > "$misskey_directory/.config/default.yml" << _EOF
 url: https://$host
 port: $misskey_port
@@ -549,8 +549,8 @@ proxyBypassHosts:
   - summaly.arkjp.net
 _EOF
 MKEOF
-#endregion
-
+#ミスキーのymlを編集ここまで
+#ポート準備
 if $nginx_local; then
 	if $ufw; then
 		tput setaf 3;
@@ -576,61 +576,75 @@ if $nginx_local; then
 		netfilter-persistent save;
 		netfilter-persistent reload;
 	fi
-
+#nginx準備
 	tput setaf 3;
 	echo "Process: prepare nginx;"
 	tput setaf 7;
-	curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg > /dev/null;
-	tput setaf 2;
-	echo "Check: nginx gpg key;";
-	tput setaf 7;
-	if gpg --dry-run --quiet --no-keyring --import --import-options import-show /usr/share/keyrings/nginx-archive-keyring.gpg | grep -q 573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62; then
-		echo "	OK.";
-	else
-		tput setaf 1;
-		echo "	NG.";
-		exit 1;
-	fi
-	echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu $(lsb_release -cs) nginx" | sudo tee /etc/apt/sources.list.d/nginx.list;
-    echo -e "Package: *\nPin: origin nginx.org\nPin: release o=nginx\nPin-Priority: 900\n" | sudo tee /etc/apt/preferences.d/99nginx;
+
+#nginxのリポジトリ準備をしますよー
+cat > "/etc/yum.repos.d/nginx.repo" << _EOF
+[nginx-stable]
+name=nginx stable repo
+baseurl=http://nginx.org/packages/centos/$releasever/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
+
+[nginx-mainline]
+name=nginx mainline repo
+baseurl=http://nginx.org/packages/mainline/centos/$releasever/$basearch/
+gpgcheck=1
+enabled=0
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
+_EOF
+	#リポジトリおーん
+	sudo yum-config-manager -y --enable nginx-mainline;
+	
 fi
 
+#systemd向けのーどじぇーえす！
 if [ $method == "systemd" ]; then
 	tput setaf 3;
 	echo "Process: prepare node.js;"
 	tput setaf 7;
-	curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -;
+	curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -;
 else
+#Dockerいんすとーる！！
 	tput setaf 3;
 	echo "Process: prepare docker;"
 	tput setaf 7;
-	if ! [ -e /usr/share/keyrings/docker-archive-keyring.gpg ]; then
-		curl -sL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-	fi
-	echo "deb [arch=$arch signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+	#Dockerリポジトリおーん！
+	sudo yum-config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo;
 fi
 
+#redisぷりぱら！
 if $redis_local; then
 	tput setaf 3;
 	echo "Process: prepare redis;"
 	tput setaf 7;
-	curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg;
-	echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list;
+	#特にないです(動画投稿者)
+	echo "OK";
 fi
 
 tput setaf 3;
 echo "Process: apt install #2;"
 tput setaf 7;
-apt -qq update -y;
-apt -qq install -y$([ $method == "systemd" ] && echo " nodejs" || echo " docker-ce docker-ce-cli containerd.io")$($redis_local && echo " redis")$($nginx_local && echo " nginx");
+sudo dnf update -y;
+#メモ：ここでnginxをインストール
+sudo dnf install -y$([ $method == "systemd" ] && echo " nodejs" || echo " docker-ce docker-ce-cli containerd.iodocker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")$($redis_local && echo " redis")$($nginx_local && echo " nginx");
 
+#corepack準備(systemd限定)
 if [ $method == "systemd" ]; then
 	tput setaf 3;
 	echo "Process: corepack enable;"
 	tput setaf 7;
+	#corepack(yarnとかnpmのパッケージマネージャーを管理するソフト)をおーん！
 	corepack enable;
 fi
 
+#インストールやつのバージョン表示！
 echo "Display: Versions;"
 if [ $method == "systemd" ]; then
 	echo "node";
@@ -649,20 +663,27 @@ if $nginx_local; then
 	echo "nginx";
 	nginx -v;
 fi
+#バージョン表示終了！
 
+#redisのデーモン準備
 if $redis_local; then
 	tput setaf 3;
 	echo "Process: daemon activate: redis;"
 	tput setaf 7;
+	#redis起動！
 	systemctl start redis-server;
+	#redis常駐！
 	systemctl enable redis-server;
 fi
+
+#nginxのデーモン準備
 #region nginx_setup
 if $nginx_local; then
 tput setaf 3;
 echo "Process: create nginx config;"
 tput setaf 7;
 
+#nginxの設定値になにか書き込んでるよかわいいね。
 cat > "/etc/nginx/conf.d/$host.conf" << NGEOF
 # nginx configuration for Misskey
 # Created by joinmisskey/bash-install v$version
@@ -686,8 +707,9 @@ server {
     location /.well-known/pki-validation/ { allow all; }
 
 NGEOF
+#書き込みここまで
 
-#region certbot_setup
+#certbot準備
 if $certbot; then
 tput setaf 3;
 echo "Process: add nginx config (certbot-1);"
@@ -698,11 +720,15 @@ cat >> "/etc/nginx/conf.d/$host.conf" << NGEOF
 }
 NGEOF
 
+#certbotでHTTPS化やってみた！
 tput setaf 3;
 echo "Process: prepare certificate;"
 tput setaf 7;
 nginx -t;
+#ここ謎リスタート
 systemctl restart nginx;
+
+#Certbotサーバに情報を発射！
 if $cloudflare; then
 	certbot certonly -t -n --agree-tos --dns-cloudflare --dns-cloudflare-credentials /etc/cloudflare/cloudflare.ini --dns-cloudflare-propagation-seconds 60 --server https://acme-v02.api.letsencrypt.org/directory $([ ${#hostarr[*]} -eq 2 ] && echo " -d $host -d *.$host" || echo " -d $host") -m "$cf_mail";
 else
@@ -710,6 +736,7 @@ else
 	certbot certonly -t -n --agree-tos --webroot --webroot-path /var/www/html $([ ${#hostarr[*]} -eq 2 ] && echo " -d $host" || echo " -d $host") -m "$cf_mail";
 fi
 
+#certbotの情報をnginxに入れてみた！
 tput setaf 3;
 echo "Process: add nginx config (certbot-2);"
 tput setaf 7;
@@ -735,8 +762,8 @@ server {
     ssl_stapling_verify on;
 NGEOF
 fi
-#endregion
 
+#nginxにMisskeyの情報を入れてみた！
 tput setaf 3;
 echo "Process: add nginx config;"
 tput setaf 7;
@@ -769,17 +796,22 @@ $($cloudflare || echo "        proxy_set_header X-Forwarded-Proto https;")
     }
 }
 NGEOF
+#以上nginxにMisskeyの情報を入れてみましたがいかがでしたか？
 
+#設定が間違っていないかの確認
 nginx -t;
 
 tput setaf 3;
 echo "Process: daemon activate: nginx;"
 tput setaf 7;
 
+#nginx再起動！
 systemctl restart nginx;
+#nginx常駐化！
 systemctl enable nginx;
 
 tput setaf 2;
+#nginxが動いてるかの確認。ドキドキワクワク
 echo "Check: localhost returns nginx;";
 tput setaf 7;
 if curl http://localhost | grep -q nginx; then
@@ -791,8 +823,7 @@ else
 fi
 
 fi
-#endregion
-
+#postgresのいんすころーる
 if $db_local; then
 	tput setaf 3;
 	echo "Process: install postgres;"
@@ -805,7 +836,7 @@ if $db_local; then
 	tput setaf 7;
 	sudo -iu postgres psql -c "CREATE ROLE $db_user LOGIN CREATEDB PASSWORD '$db_pass';" -c "CREATE DATABASE $db_name OWNER $db_user;"
 fi
-
+#docker準備
 #region docker setting
 if [ $method != "systemd" ]; then
 	#region enable rootless docker
@@ -863,7 +894,7 @@ if [ $method != "systemd" ]; then
 	#endregion
 fi
 #endregion
-
+#redis準備
 #region modify redis conf
 if $redis_local; then
 	tput setaf 3;
@@ -890,7 +921,7 @@ if $redis_local; then
 	systemctl restart redis-server;
 fi
 #endregion
-
+#Misskey(Systemd)準備
 if [ $method == "systemd" ]; then
 #region systemd
 #region work with misskey user
@@ -925,7 +956,7 @@ else
 fi
 MKEOF
 #endregion
-
+#Misskeyのデーモン準備
 tput setaf 3;
 echo "Process: create misskey daemon;"
 tput setaf 7;
@@ -949,12 +980,14 @@ Restart=always
 WantedBy=multi-user.target
 _EOF
 
+#Misskey起動！
 systemctl daemon-reload;
 systemctl enable "$host";
 systemctl start "$host";
 systemctl status "$host" --no-pager;
 
 #endregion
+#Misskey(Docker)準備
 elif [ $method == "docker" ]; then
 #region docker build
 tput setaf 3;
@@ -967,34 +1000,39 @@ fi
 
 echo "";
 
+#MisskeyのDocker向け最終準備
 if [ $method != "systemd" ]; then
-tput setaf 2;
-tput bold;
-echo "ALL MISSKEY INSTALLATION PROCESSES ARE COMPLETE!";
-echo "Now all we need to do is run docker run."
-tput setaf 7;
-echo "Watch the screen."
-echo "When it shows \"Now listening on port $misskey_port on https://$host\","
-echo "press Ctrl+C to exit logs and jump to https://$host/ and continue setting up your instance.";
-echo ""
-echo "This script version is v$version.";
-echo "Please follow @joinmisskey@misskey.io to address bugs and updates.";
-echo ""
-read -r -p "Press Enter key to execute docker run> ";
-echo ""
-tput setaf 3;
-echo "Process: docker run;"
-tput setaf 7;
-docker_container=$(sudo -iu "$misskey_user" XDG_RUNTIME_DIR=/run/user/$m_uid DOCKER_HOST=unix:///run/user/$m_uid/docker.sock docker run -d -p $misskey_port:$misskey_port --add-host=$misskey_localhost:$docker_host_ip -v "/home/$misskey_user/$misskey_directory/files":/misskey/files -v "/home/$misskey_user/$misskey_directory/.config/default.yml":/misskey/.config/default.yml:ro --restart unless-stopped -t "$docker_repository");
-echo "$docker_container";
-su "$misskey_user" << MKEOF
-set -eu;
-cd ~;
+	tput setaf 2;
+	tput bold;
+	echo "ALL MISSKEY INSTALLATION PROCESSES ARE COMPLETE!";
+	echo "Now all we need to do is run docker run."
+	tput setaf 7;
+	echo "Watch the screen."
+	echo "When it shows \"Now listening on port $misskey_port on https://$host\","
+	echo "press Ctrl+C to exit logs and jump to https://$host/ and continue setting up your instance.";
+	echo ""
+	echo "This script version is v$version.";
+	echo "Please follow @joinmisskey@misskey.io to address bugs and updates.";
+	echo ""
+	read -r -p "Press Enter key to execute docker run> ";
+	echo ""
+	tput setaf 3;
+	echo "Process: docker run;"
+	tput setaf 7;
+	docker_container=$(sudo -iu "$misskey_user" XDG_RUNTIME_DIR=/run/user/$m_uid DOCKER_HOST=unix:///run/user/$m_uid/docker.sock docker run -d -p $misskey_port:$misskey_port --add-host=$misskey_localhost:$docker_host_ip -v "/home/$misskey_user/$misskey_directory/files":/misskey/files -v "/home/$misskey_user/$misskey_directory/.config/default.yml":/misskey/.config/default.yml:ro --restart unless-stopped -t "$docker_repository");
+	echo "$docker_container";
 
-tput setaf 3;
-echo "Process: create .misskey-docker.env;"
-tput setaf 7;
+	#Misskeyのユーザーに切り替えー
+	su "$misskey_user" << MKEOF
+	set -eu;
+	cd ~;
 
+	#Misskey(Docker)の環境ファイルの準備をしますよー
+	tput setaf 3;
+	echo "Process: create .misskey-docker.env;"
+	tput setaf 7;
+
+#Misskey(Docker)の環境ファイルに情報をぶっこむ
 cat > ".misskey-docker.env" << _EOF
 method="$method"
 host="$host"
@@ -1008,18 +1046,22 @@ version="$version"
 _EOF
 MKEOF
 
-sudo -iu "$misskey_user" XDG_RUNTIME_DIR=/run/user/$m_uid DOCKER_HOST=unix:///run/user/$m_uid/docker.sock docker logs -f $docker_container;
+	sudo -iu "$misskey_user" XDG_RUNTIME_DIR=/run/user/$m_uid DOCKER_HOST=unix:///run/user/$m_uid/docker.sock docker logs -f $docker_container;
 
+#ここからSystemdの人向け最終準備ー
 else
 
-su "$misskey_user" << MKEOF
-set -eu;
-cd ~;
+	#MisskeyのIDに切り替えー
+	su "$misskey_user" << MKEOF
+	set -eu;
+	cd ~;
 
-tput setaf 3;
-echo "Process: create .misskey.env;"
-tput setaf 7;
+	#Misskeyの環境ファイルの準備をしますよー
+	tput setaf 3;
+	echo "Process: create .misskey.env;"
+	tput setaf 7;
 
+#Misskeyの環境ファイルに情報をぶっこむ
 cat > ".misskey.env" << _EOF
 host="$host"
 misskey_port=$misskey_port
@@ -1029,11 +1071,12 @@ version="$version"
 _EOF
 MKEOF
 
-tput setaf 2;
-tput bold;
-echo "ALL MISSKEY INSTALLATION PROCESSES ARE COMPLETE!";
-echo "Jump to https://$host/ and continue setting up your instance.";
-tput setaf 7;
-echo "This script version is v$version.";
-echo "Please follow @joinmisskey@misskey.io to address bugs and updates.";
+	#最後のご挨拶
+	tput setaf 2;
+	tput bold;
+	echo "ALL MISSKEY INSTALLATION PROCESSES ARE COMPLETE!";
+	echo "Jump to https://$host/ and continue setting up your instance.";
+	tput setaf 7;
+	echo "This script version is v$version.";
+	echo "Please follow @joinmisskey@misskey.io to address bugs and updates.";
 fi
