@@ -455,7 +455,11 @@ dnf update -y;
 sudo dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm";
 
 #rpmFusionのインストール(FFmpegのインストールに必要)
-sudo dnf install -y "https://download1.rpmfusion.org/free/el/rpmfusion-free-release-8.noarch.rpm"
+sudo dnf install -y "https://download1.rpmfusion.org/free/el/rpmfusion-free-release-8.noarch.rpm";
+
+#ffmpegの前提であるSDL2が入っているリポジトリをON
+yum install dnf-plugins-core;
+yum config-manager --set-enabled powertools;
 
 #必要ソフトのインストール
 #メモ：（抜いたもの：apt-transport-https、software-properties-common、build-essential、uidmap。理由:RedHat環境には不要なため）
