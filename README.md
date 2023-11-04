@@ -126,12 +126,12 @@ python3-certbot-dns-cloudflare　
 sudo apt install -y curl ca-certificates gnupg2 lsb-release
 ```
 
-### Redisをインストール・・・5.0が入っているが大丈夫か・・・？(←一番の問題点。修正中)
+### Redisをインストール！
 ```
-sudo dnf install -y @redis
+sudo dnf module install redis:6
 ```
 
-### 一睡の不安をぬぐいながらRedisを起動＆立ち上げっぱなし＆状態確認（activeならOK）
+### Redisを起動＆立ち上げっぱなし＆状態確認（activeならOK）
 ```
 sudo systemctl start redis
 sudo systemctl enable redis
