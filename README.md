@@ -15,8 +15,6 @@ https://misskey-hub.net/docs/install/ubuntu-manual.html
 ## 動作検証環境
 ・Red Hat Enterprise Linux 8.7  
 ・Rocky Linux 8.7  
-  
-# 作業手順は執筆中です！！！まだ実行しないでください！
 
 ## 作業手順
 ### ミスキーユーザを作成
